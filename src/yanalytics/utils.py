@@ -42,8 +42,8 @@ def reduce_bytes(size: int) -> int:
 
 @if_not_none
 def reduce_cpus(cpus: int) -> int:
-    # Nothing smart for now
-    return cpus
+    # round to power of 2: exact core counts are fingerprintable
+    return 2 ** cpus.bit_length()
 
 
 @if_not_none
@@ -54,8 +54,8 @@ def reduce_users_nb(users: int) -> int:
 
 @if_not_none
 def reduce_domains_nb(domains: int) -> int:
-    # Nothing smart for now
-    return domains
+    # round to power of 2: exact domain counts are fingerprintable
+    return 2 ** domains.bit_length()
 
 
 @cache

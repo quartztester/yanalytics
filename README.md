@@ -17,7 +17,7 @@ A number of informations is sent to our server:
 * The Debian and YunoHost versions you are using
 * Hardware information:
   * architecture
-  * number of CPUs
+  * number of CPUs (rounded up to a power of two)
   * total RAM amount (rounded)
   * total disk size (rounded)
 * A geocode based on the IP address (the IP address itself is NOT stored)
