@@ -15,7 +15,7 @@ from sqlalchemy.orm import (
 )
 
 from . import utils
-from .types import Analytic
+from .types import Analytic, AppAnalytic
 
 Base = declarative_base()
 
@@ -41,6 +41,10 @@ instance_apps = sa.Table(
 
 def _timestamp_default() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
+
+
+# app_installs added at version 3
+DB_VERSION = 3
 
 
 class InstanceAnalytics(Base):
@@ -79,6 +83,21 @@ class App(Base):
     )
 
 
+class AppInstall(Base):
+    """Per-app reports with per-app pseudonymous uuids.
+
+    Deliberately NOT linked to the instances table: a row only says
+    "some installation that calls itself <uuid> runs <app>". No query
+    can reconstruct which apps a single installation runs together.
+    """
+
+    __tablename__ = "app_installs"
+
+    app = sa.Column(sa.String(255), primary_key=True)
+    uuid = sa.Column(sa.String(64), primary_key=True)
+    timestamp = sa.Column(sa.DateTime(timezone=False), default=_timestamp_default)
+
+
 class YanalyticsDatabase:
     def __init__(self, db_path: Path) -> None:
         self.log = logging.getLogger("yanalytics")
@@ -92,13 +111,14 @@ class YanalyticsDatabase:
 
         with self.engine.connect() as conn:
             stmt = sa.text("pragma user_version")
-            stmt_set_version = sa.text("pragma user_version = 2")
+            stmt_set_version = sa.text(f"pragma user_version = {DB_VERSION}")
             current_version: int = conn.execute(stmt).scalar_one()
             self.log.debug("DB is at version %d", current_version)
 
-            if current_version == 0:
-                self.log.info("Creating database...")
-                Base.metadata.create_all(self.engine)
+            # create_all is idempotent: it only creates missing tables,
+            # so this also adds app_installs to databases at version 2.
+            Base.metadata.create_all(self.engine)
+            if current_version < DB_VERSION:
                 conn.execute(stmt_set_version)
 
             conn.commit()
@@ -130,6 +150,25 @@ class YanalyticsDatabase:
 
         with Session(self.engine) as session:
             session.merge(db_analytic)
+            session.commit()
+
+    async def insert_app(self, analytic: AppAnalytic) -> None:
+        row = AppInstall(
+            app=analytic.app,
+            uuid=analytic.uuid,
+            timestamp=_timestamp_default(),
+        )
+        with Session(self.engine) as session:
+            session.merge(row)
+            session.commit()
+
+    async def delete_app(self, app: str, uuid: str) -> None:
+        self.log.info("Deleting app %s for %s", app, uuid[:8])
+        with Session(self.engine) as session:
+            stmt = sa.delete(AppInstall).where(
+                AppInstall.app == app, AppInstall.uuid == uuid
+            )
+            session.execute(stmt)
             session.commit()
 
     async def delete_machine(self, uuid: str) -> None:

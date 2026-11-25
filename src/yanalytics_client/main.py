@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import uuid
 from pathlib import Path
 
 import requests
@@ -10,9 +11,9 @@ from .config import get_config
 
 
 class YanalyticsInstance:
-    def __init__(self, server: str, machine_id: str | None) -> None:
+    def __init__(self, server: str, id_file: str) -> None:
         self.server = server
-        self.uuid = self._uuid(machine_id)
+        self.base_id = self._load_or_create_id(Path(id_file))
 
     def _raise_err(self, response: requests.Response) -> None:
         if not response.ok:
@@ -21,14 +22,29 @@ class YanalyticsInstance:
                 msg = msg["error"]
             raise RuntimeError(msg)
 
-    def _uuid(self, machine_id: str | None) -> str:
-        salt = "yunohost-analytics"
-        machine_id = machine_id or Path("/etc/machine-id").read_text().strip()
-        return hashlib.sha512((salt + machine_id).encode()).hexdigest()
+    @staticmethod
+    def _load_or_create_id(path: Path) -> str:
+        """Random installation id, generated on first run and never sent
+        to the server. Not derived from /etc/machine-id: that is a stable
+        secret shared by cloned images and reversible by anyone who knows
+        it."""
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(uuid.uuid4().hex)
+        return path.read_text().strip()
+
+    def uuid_for(self, tag: str) -> str:
+        """Deterministic per-tag pseudonym of the installation id.
+
+        Each tag (an app name, or "instance") yields an unrelated value,
+        so the server can dedup repeat reports of one app without being
+        able to tell that two reports come from the same installation.
+        """
+        return hashlib.sha256(f"{self.base_id}:{tag}".encode()).hexdigest()
 
     def push_stats(self) -> None:
         data: dict[str, str | dict[str, str]] = {
-            "uuid": self.uuid,
+            "uuid": self.uuid_for("instance"),
             "versions": {
                 "debian": "",
                 "yunohost": "",
@@ -38,8 +54,24 @@ class YanalyticsInstance:
         response = requests.post(url, json=data, timeout=60)
         self._raise_err(response)
 
+    def push_apps(self, apps: list[str]) -> None:
+        url = f"{self.server}/api/v1/app/analytic"
+        for app in apps:
+            response = requests.post(
+                url, json={"uuid": self.uuid_for(app), "app": app}, timeout=60
+            )
+            self._raise_err(response)
+
+    def delete_apps(self, apps: list[str]) -> None:
+        url = f"{self.server}/api/v1/app"
+        for app in apps:
+            response = requests.delete(
+                url, params={"uuid": self.uuid_for(app), "app": app}, timeout=60
+            )
+            self._raise_err(response)
+
     def instance_delete(self) -> None:
-        data = {"uuid": str(self.uuid)}
+        data = {"uuid": self.uuid_for("instance")}
         url = f"{self.server}/api/v1/instance"
         response = requests.delete(url, params=data, timeout=60)
         self._raise_err(response)
@@ -58,8 +90,11 @@ def main() -> None:
 
     sub = parser.add_subparsers(required=True, dest="mode")
     parser_inst = sub.add_parser("instance")
-    parser_inst.add_argument("-i", "--machine-id", type=str, required=False)
     parser_inst.add_argument("action", type=str, choices=["push", "delete"])
+
+    parser_apps = sub.add_parser("apps")
+    parser_apps.add_argument("action", type=str, choices=["push", "delete"])
+    parser_apps.add_argument("app", nargs="+", help="installed app ids")
 
     sub.add_parser("analytics")
 
@@ -73,12 +108,20 @@ def main() -> None:
 
     match args.mode:
         case "instance":
-            instance = YanalyticsInstance(server, args.machine_id or config.machine_id)
+            instance = YanalyticsInstance(server, config.id_file)
             match args.action:
                 case "push":
                     instance.push_stats()
                 case "delete":
                     instance.instance_delete()
+
+        case "apps":
+            instance = YanalyticsInstance(server, config.id_file)
+            match args.action:
+                case "push":
+                    instance.push_apps(args.app)
+                case "delete":
+                    instance.delete_apps(args.app)
 
         case "analytics":
             show_analytics(server)

@@ -13,11 +13,14 @@ A YunoHost instances analytics server, inspired by https://www.home-assistant.io
 A number of informations is sent to our server:
 
 * A unique identifier for your installation, so each installation is only counted once.
-  It is derived from `/etc/machine-id` but is NOT identical to preserve privacy.
+  It is a random value generated on first run (stored in `/etc/yunohost/analytics-id`,
+  never sent to the server). Each app is reported separately under its own derived
+  pseudonym, so the server can count installs per app but can never reconstruct the
+  full app list of a single installation.
 * The Debian and YunoHost versions you are using
 * Hardware information:
   * architecture
-  * number of CPUs
+  * number of CPUs (rounded up to a power of two)
   * total RAM amount (rounded)
   * total disk size (rounded)
 * A geocode based on the IP address (the IP address itself is NOT stored)
