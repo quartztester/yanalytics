@@ -26,7 +26,7 @@ class Config(BaseModel):
     model_config = model_config
 
     analytics_server: str = "https://analytics.yunohost.org"
-    machine_id: str | None = None
+    id_file: str = "/etc/yunohost/analytics-id"
     analytics: ConfigAnalytics = ConfigAnalytics()
 
     testing: bool = False
