@@ -28,6 +28,15 @@ class Analytic(BaseModel):
     domains_nb: int | None = None
 
 
+class AppAnalytic(BaseModel):
+    # Per-app report: uuid is a per-app pseudonym of the installation,
+    # deliberately uncorrelatable with instance reports or other apps.
+    model_config = model_config
+
+    uuid: str
+    app: str
+
+
 class AnalyticsAggregate(BaseModel):
     # Timestamped number of instances
     instances: list[tuple[int, int]]

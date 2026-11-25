@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from .config import Config
 from .database import YanalyticsDatabase
-from .types import Analytic, AnalyticsAggregate
+from .types import Analytic, AnalyticsAggregate, AppAnalytic
 
 
 def create_app(config: Config) -> FastAPI:
@@ -64,6 +64,18 @@ def create_app(config: Config) -> FastAPI:
         logger.debug("Getting analytic %s", item)
         await database.insert_analytics(item)
         return {"message": "Item created successfully", "item": item}
+
+    @app.post("/api/v1/app/analytic", status_code=201)
+    async def post_app_analytic(item: AppAnalytic) -> dict[str, str]:
+        logger.debug("Getting app analytic %s", item.app)
+        await database.insert_app(item)
+        return {"message": "App install recorded"}
+
+    @app.delete("/api/v1/app", status_code=202)
+    async def delete_app_analytic(app: str, uuid: str) -> dict[str, str]:
+        logger.debug("Deleting app %s for %s", app, uuid[:8])
+        await database.delete_app(app, uuid)
+        return {}
 
     @app.delete("/api/v1/instance", status_code=202)
     async def delete_machine(uuid: str) -> dict[str, str]:
